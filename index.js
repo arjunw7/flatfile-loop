@@ -101,7 +101,9 @@ const formatMismatches = (mismatches) => {
 export default function flatfileEventListener(listener) {
   listener.use(ExcelExtractor({ raw: true, rawNumbers: true }));
   listener.use(XMLExtractor());
-  listener.use(exportWorkbookPlugin()));
+  listener.use(exportWorkbookPlugin({
+    autoDownload: true
+  }));
 
   listener.on('**', (event) => {
     console.log('Event Received: ' + event.topic);
@@ -184,6 +186,7 @@ export default function flatfileEventListener(listener) {
       const { data: workbookSheets } = await api.sheets.list({ workbookId });
       let genomeData = [];
       let icData = [];
+      let hrData = [];
       let addSheet = null;
       let deleteSheet = null;
       let editSheet = null;
@@ -223,6 +226,21 @@ export default function flatfileEventListener(listener) {
           }));;
           console.log('icData', JSON.stringify(icData[0]))
         }
+        if(element?.slug === "hr_data") {
+          hrData =  records?.records.map((record) => ({
+            employee_id: record?.values?.employee_id?.value,
+            name: record?.values?.name?.value,
+            relationship: record?.values?.relationship_to_account_holder?.value,
+            gender: record?.values?.gender?.value,
+            dob: reformatDate(record?.values?.date_of_birth_dd_mmm_yyyy?.value),
+            coverage_start_date: reformatDate(record?.values?.coverage_start_date_dd_mmm_yyyy?.value),
+            sum_insured: record?.values?.sum_insured?.value,
+            mobile: record?.values?.mobile?.value,
+            email: record?.values.email_address?.value,
+            ctc: record?.values.ctc?.value,
+          }));;
+          console.log('hrData', JSON.stringify(hrData[0]))
+        }
         if(element?.slug === "add_data"){
           addSheet = element;
         }
@@ -234,32 +252,91 @@ export default function flatfileEventListener(listener) {
           editSheet = element;
         }
       }
-        const createKey = (record) => `${record.employee_id}_${record.name}`;
+      const createKey = (record) => `${record.employee_id}_${record.name}`;
 
-        // Maps for faster lookup
-        const genomeMap = new Map(genomeData.map((record) => [createKey(record), record]));
-        const icMap = new Map(icData.map((record) => [createKey(record), record]));
+      // Create maps for each dataset
+      const genomeMap = new Map(genomeData.map((record) => [createKey(record), record]));
+      const icMap = new Map(icData.map((record) => [createKey(record), record]));
+      const hrMap = hrData.length > 0 ? new Map(hrData.map((record) => [createKey(record), record])) : null;
 
-        // Variables to hold results
-        const missingAtInsurer = [];
-        const missingInGenome = [];
-        const dataMismatch = [];
+      // Variables to hold results
+      const addData = [];
+      const editData = [];
+      const offboardSheet = [];
+      const offboardSheet2 = [];
+      const dataMismatch = [];
 
-        // Check for records in genomeData but missing in icData
+      // Reconciliation logic
+      if (hrMap) {
+        // Condition 1: Records in HR but not in Genome and IC
+        for (const key of hrMap.keys()) {
+          if (!genomeMap.has(key) && !icMap.has(key)) {
+            addData.push(hrMap.get(key));
+          }
+        }
+
+        // Condition 2: Records in HR and Genome but not in IC
+        for (const key of hrMap.keys()) {
+          if (genomeMap.has(key) && !icMap.has(key)) {
+            editData.push(hrMap.get(key));
+          }
+        }
+
+        // Condition 3: Records in Genome and IC but not in HR
+        for (const key of genomeMap.keys()) {
+          if (!hrMap.has(key) && icMap.has(key)) {
+            offboardSheet.push(genomeMap.get(key));
+          }
+        }
+
+        // Condition 4 and 5: Records in IC but not in HR and/or Genome
+        for (const key of icMap.keys()) {
+          if (!hrMap.has(key) && !genomeMap.has(key)) {
+            offboardSheet2.push(icMap.get(key));
+          }
+        }
+
+        // Condition 6: Data mismatches between HR, Genome, and IC
+        for (const key of hrMap.keys()) {
+          if (genomeMap.has(key) && icMap.has(key)) {
+            const hrRecord = hrMap.get(key);
+            const genomeRecord = genomeMap.get(key);
+            const icRecord = icMap.get(key);
+
+            const mismatches = [];
+            if (hrRecord.relationship !== icRecord.relationship)
+              mismatches.push({ field: "Relationship", hr: hrRecord.relationship, ic: icRecord.relationship });
+            if (hrRecord.gender !== icRecord.gender)
+              mismatches.push({ field: "Gender", hr: hrRecord.gender, ic: icRecord.gender });
+            if (hrRecord.dob !== icRecord.dob)
+              mismatches.push({ field: "DOB", hr: hrRecord.dob, ic: icRecord.dob });
+            if (hrRecord.joining_date !== icRecord.joining_date)
+              mismatches.push({ field: "Joining Date", hr: hrRecord.joining_date, ic: icRecord.joining_date });
+            if (hrRecord.sum_insured !== icRecord.sum_insured)
+              mismatches.push({ field: "Sum Insured", hr: hrRecord.sum_insured, ic: icRecord.sum_insured });
+
+            if (mismatches.length > 0) {
+              dataMismatch.push({ key, mismatches, genomeRecord });
+            }
+          }
+        }
+      } else {
+        // Reconciliation without HR data
+        // Records in Genome but not in IC
         for (const key of genomeMap.keys()) {
           if (!icMap.has(key)) {
-            missingAtInsurer.push(genomeMap.get(key));
+            offboardSheet.push(genomeMap.get(key));
           }
         }
 
-        // Check for records in icData but missing in genomeData
+        // Records in IC but not in Genome
         for (const key of icMap.keys()) {
           if (!genomeMap.has(key)) {
-            missingInGenome.push(icMap.get(key));
+            offboardSheet2.push(icMap.get(key));
           }
         }
 
-        // Check for mismatched records
+        // Data mismatches between Genome and IC
         for (const key of genomeMap.keys()) {
           if (icMap.has(key)) {
             const genomeRecord = genomeMap.get(key);
@@ -273,54 +350,75 @@ export default function flatfileEventListener(listener) {
             if (genomeRecord.dob !== icRecord.dob)
               mismatches.push({ field: "DOB", genome: genomeRecord.dob, ic: icRecord.dob });
             if (genomeRecord.joining_date !== icRecord.joining_date)
-              mismatches.push({ field: "Joining Date", genome: genomeRecord.coverage_start_date, ic: icRecord.coverage_start_date });
+              mismatches.push({ field: "Joining Date", genome: genomeRecord.joining_date, ic: icRecord.joining_date });
             if (genomeRecord.sum_insured !== icRecord.sum_insured)
               mismatches.push({ field: "Sum Insured", genome: genomeRecord.sum_insured, ic: icRecord.sum_insured });
 
             if (mismatches.length > 0) {
-              dataMismatch.push({
-                key,
-                mismatches,
-                genomeRecord
-              });
+              dataMismatch.push({ key, mismatches, genomeRecord });
             }
           }
-      }
-      console.log('mismatched :', JSON.stringify(dataMismatch[0]))
-
-      if(missingAtInsurer?.length) {
-        await api.jobs.create({
-          type: "workbook",
-          operation: "delete-records",
-          trigger: "immediate",
-          source: workbookId,
-          config: {
-            sheet: deleteSheet?.id,
-            filter: "all",
-          },
-        });
-
-        await api.records.insert(deleteSheet?.id, missingAtInsurer?.map((item) => ({
-          user_id: { value: item?.user_id },
-          relationship_to_account_holder: { value: item?.relationship },
-          date_of_leaving_dd_mmm_yyyy: { value: null},
-          policy_exception: { value: ''},
-        })));
+        }
       }
 
-      if(missingInGenome?.length) {
-        await api.jobs.create({
-          type: "workbook",
-          operation: "delete-records",
-          trigger: "immediate",
-          source: workbookId,
-          config: {
-            sheet: addSheet?.id,
-            filter: "all",
-          },
-        });
-        
-        await api.records.insert(addSheet?.id, missingInGenome?.map((item) => ({
+      await api.jobs.create({
+        type: "workbook",
+        operation: "delete-records",
+        trigger: "immediate",
+        source: workbookId,
+        config: {
+          sheet: deleteSheet?.id,
+          filter: "all",
+        },
+      });
+      await api.jobs.create({
+        type: "workbook",
+        operation: "delete-records",
+        trigger: "immediate",
+        source: workbookId,
+        config: {
+          sheet: addSheet?.id,
+          filter: "all",
+        },
+      });
+      await api.jobs.create({
+        type: "workbook",
+        operation: "delete-records",
+        trigger: "immediate",
+        source: workbookId,
+        config: {
+          sheet: editSheet?.id,
+          filter: "all",
+        },
+      });
+      
+      if(offboardSheet?.length || offboardSheet2?.length) {
+        if(offboardSheet?.length) {
+          await api.records.insert(deleteSheet?.id, offboardSheet?.map((item) => ({
+            user_id: { value: item?.user_id },
+            employee_id: { value: item?.employee_id },
+            name: { value: item?.name },
+            relationship_to_account_holder: { value: item?.relationship },
+            date_of_leaving_dd_mmm_yyyy: { value: null},
+            policy_exception: { value: ''},
+            required_confirmation: { value: true },
+          })));
+        }
+        if(offboardSheet2?.length) {
+          await api.records.insert(deleteSheet?.id, offboardSheet2?.map((item) => ({
+            user_id: { value: item?.user_id },
+            employee_id: { value: item?.employee_id },
+            name: { value: item?.name },
+            relationship_to_account_holder: { value: item?.relationship },
+            date_of_leaving_dd_mmm_yyyy: { value: null},
+            policy_exception: { value: ''},
+            required_confirmation: { value: false }
+          })));
+        }
+      }
+
+      if(addData?.length) {        
+        await api.records.insert(addSheet?.id, addData?.map((item) => ({
           employee_id: { value: item?.employee_id },
           relationship_to_account_holder: { value: item?.relationship },
           name: { value: item?.name },
@@ -336,39 +434,50 @@ export default function flatfileEventListener(listener) {
         })));
       }
 
-      if(dataMismatch?.length) {
-        await api.jobs.create({
-          type: "workbook",
-          operation: "delete-records",
-          trigger: "immediate",
-          source: workbookId,
-          config: {
-            sheet: editSheet?.id,
-            filter: "all",
-          },
-        });
-        
-        await api.records.insert(editSheet?.id, dataMismatch?.map((item) => ({
-          user_id: { value: item?.genomeRecord?.user_id },
-          name: { value: item?.genomeRecord?.name },
-          relationship_to_account_holder: { value: item?.genomeRecord?.relationship },
-          coverage_start_date_dd_mmm_yyyy: { value: item?.genomeRecord?.coverage_start_date },
-          enrolment_due_date_dd_mmm_yyyy: { value: item?.genomeRecord?.enrolment_due_date },
-          slab_id: { value: item?.genomeRecord?.slab_id },
-          mobile: { value: item?.genomeRecord?.mobile },
-          email_address: { value: item?.genomeRecord?.email },
-          date_of_leaving_dd_mmm_yyyy: { value: null},
-          gender: { value: item?.genomeRecord?.gender },
-          ctc: { value: item?.genomeRecord?.ctc },
-          date_of_birth_dd_mmm_yyyy: { value: item?.genomeRecord?.dob },
-          mismatch: { value: formatMismatches(item?.mismatches) }
-        })));
+      if(editData?.length || dataMismatch?.length) {
+        if(editData?.length) {
+          await api.records.insert(editSheet?.id, editData?.map((item) => ({
+            user_id: { value: item?.genomeRecord?.user_id },
+            name: { value: item?.genomeRecord?.name },
+            relationship_to_account_holder: { value: item?.genomeRecord?.relationship },
+            coverage_start_date_dd_mmm_yyyy: { value: item?.genomeRecord?.coverage_start_date },
+            enrolment_due_date_dd_mmm_yyyy: { value: item?.genomeRecord?.enrolment_due_date },
+            slab_id: { value: item?.genomeRecord?.slab_id },
+            mobile: { value: item?.genomeRecord?.mobile },
+            email_address: { value: item?.genomeRecord?.email },
+            date_of_leaving_dd_mmm_yyyy: { value: null},
+            gender: { value: item?.genomeRecord?.gender },
+            ctc: { value: item?.genomeRecord?.ctc },
+            date_of_birth_dd_mmm_yyyy: { value: item?.genomeRecord?.dob },
+            mismatch: { value: item?.mismatches ? formatMismatches(item?.mismatches) : '' }
+          })));
+        }
+        console.log('dataMismatch', JSON.stringify(dataMismatch))
+        if(dataMismatch?.length) {
+          console.log('dataMismatch', JSON.stringify(dataMismatch[0]))
+          await api.records.insert(editSheet?.id, dataMismatch?.map((item) => ({
+            user_id: { value: item?.genomeRecord?.user_id },
+            name: { value: item?.genomeRecord?.name },
+            relationship_to_account_holder: { value: item?.genomeRecord?.relationship },
+            coverage_start_date_dd_mmm_yyyy: { value: item?.genomeRecord?.coverage_start_date },
+            enrolment_due_date_dd_mmm_yyyy: { value: item?.genomeRecord?.enrolment_due_date },
+            slab_id: { value: item?.genomeRecord?.slab_id },
+            mobile: { value: item?.genomeRecord?.mobile },
+            email_address: { value: item?.genomeRecord?.email },
+            date_of_leaving_dd_mmm_yyyy: { value: null},
+            gender: { value: item?.genomeRecord?.gender },
+            ctc: { value: item?.genomeRecord?.ctc },
+            date_of_birth_dd_mmm_yyyy: { value: item?.genomeRecord?.dob },
+            mismatch: { value: item?.mismatches ? formatMismatches(item?.mismatches) : '' }
+          })));
+        }
+
       }
 
       // Log results
-      console.log("Missing at Insurer:", missingAtInsurer?.length, JSON.stringify(missingAtInsurer[0]));
-      console.log("Missing in Genome:", missingInGenome?.length,JSON.stringify(missingInGenome[0]));
-      console.log("Data Mismatches:", dataMismatch?.length, JSON.stringify(dataMismatch[0]));
+      console.log("Add Records:", addData?.length, JSON.stringify(addData[0]));
+      console.log("Edit Genome:", editData?.length,JSON.stringify(editData[0]));
+      console.log("Offboard Data:", (offboardSheet?.length + offboardSheet2?.length), JSON.stringify([...offboardSheet2, ...offboardSheet][0]));
   
       try {
         await api.jobs.ack(jobId, {

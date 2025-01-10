@@ -330,6 +330,16 @@ export const blueprint = (sumInsuredList) => ({
           "type": "string"
         },
         {
+          "key": "employee_id",
+          "label": "Employee ID",
+          "type": "string"
+        },
+        {
+          "key": "name",
+          "label": "Name",
+          "type": "string"
+        },
+        {
           "key": "relationship_to_account_holder",
           "label": "Relationship to Account Holder",
           "type": "string"
@@ -343,6 +353,11 @@ export const blueprint = (sumInsuredList) => ({
           "key": "policy_exception",
           "label": "Policy Exception",
           "type": "string"
+        },
+        {
+          "key": "required_confirmation",
+          "label": "Requires Confirmation",
+          "type": "boolean"
         },
       ]
     },
