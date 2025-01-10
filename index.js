@@ -5,6 +5,7 @@ import { exportWorkbookPlugin } from '@flatfile/plugin-export-workbook'
 import { blueprint } from './blueprint'
 import { ExcelExtractor } from "@flatfile/plugin-xlsx-extractor";
 import { XMLExtractor } from "@flatfile/plugin-xml-extractor";
+import { date } from '@flatfile/api/core/schemas'
 const fs = require('fs');
 
 
@@ -31,20 +32,81 @@ function convertUTCtoIST(utcDate) {
   }
 }
 
-// Helper to reformat any date into dd/MM/yyyy format
-function reformatDate(date) {
-  if (!date) return null; // Handle missing dates
+function reformatDate(dateInput) {
+  if (!dateInput) return null;
+
   try {
-    const parsedDate = new Date(date?.replaceAll(' ', '/'));
-    const day = String(parsedDate.getDate()).padStart(2, "0");
-    const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
-    const year = parsedDate.getFullYear();
+    let parsedDate;
+
+    // Handle Unix timestamp
+    if (!isNaN(dateInput) && (typeof dateInput === 'number' || !isNaN(Number(dateInput)))) {
+      parsedDate = new Date(parseInt(dateInput));
+    }
+    // Handle ISO format directly
+    else if (dateInput.includes('T')) {
+      parsedDate = new Date(dateInput);
+    }
+    // Handle dates with month names (e.g., "25-Aug-74" or "16 Sep 2024")
+    else if (/[a-zA-Z]/.test(dateInput)) {
+      // Convert two-digit year to four digits
+      const parts = dateInput.replace(/[-\s]/g, ' ').split(' ');
+      if (parts[2] && parts[2].length === 2) {
+        const year = parseInt(parts[2]);
+        parts[2] = (year < 50 ? '20' : '19') + parts[2].padStart(2, '0');
+      }
+      parsedDate = new Date(parts.join(' '));
+    }
+    // Handle numeric dates (e.g., "01/02/23" or "2023/12/31")
+    else {
+      const parts = dateInput.split(/[-/]/);
+      
+      // Check if year is in first position (YYYY-MM-DD)
+      if (parts[0].length === 4) {
+        parsedDate = new Date(dateInput);
+      } else {
+        // Handle DD/MM/YY or DD/MM/YYYY
+        if (parts[2].length === 2) {
+          const year = parseInt(parts[2]);
+          parts[2] = (year < 50 ? '20' : '19') + parts[2].padStart(2, '0');
+        }
+        // Rearrange to MM/DD/YYYY for Date constructor
+        const month = parts[1];
+        parts[1] = parts[0];
+        parts[0] = month;
+        parsedDate = new Date(parts.join('/'));
+      }
+    }
+
+    // Verify we have a valid date
+    if (isNaN(parsedDate.getTime())) {
+      throw new Error('Invalid date');
+    }
+
+    // Convert to IST
+    const istOptions = { timeZone: 'Asia/Kolkata' };
+    const istDate = new Date(parsedDate.toLocaleString('en-US', istOptions));
+    
+    // Format as DD/MM/YYYY
+    const day = String(istDate.getDate()).padStart(2, '0');
+    const month = String(istDate.getMonth() + 1).padStart(2, '0');
+    const year = istDate.getFullYear();
+
     return `${day}/${month}/${year}`;
   } catch (error) {
-    console.error("Error reformatting date:", date, error);
-    return date; // Return as-is if reformatting fails
+    console.error("Error reformatting date:", dateInput, error);
+    return dateInput; // Return original input if parsing fails
   }
 }
+
+const formatMismatches = (mismatches) => {
+  if (!mismatches || mismatches.length === 0) return '';
+
+  return mismatches.map(mismatch => {
+    // Create consistent spacing for alignment
+    const field = mismatch.field.padEnd(15, ' ');  // Adjust padding as needed
+    return `${field} -> Genome: ${mismatch.genome.padEnd(10)} <> IC: ${mismatch.ic}`;
+  }).join(' & ');
+};
 
 
 export default function flatfileEventListener(listener) {
@@ -162,8 +224,8 @@ export default function flatfileEventListener(listener) {
             name: record?.values?.name?.value,
             relationship: record?.values?.relationship_to_account_holder?.value,
             gender: record?.values?.gender?.value,
-            dob: convertUTCtoIST(record?.values?.date_of_birth_dd_mmm_yyyy?.value),
-            coverage_start_date: convertUTCtoIST(record?.values?.coverage_start_date_dd_mmm_yyyy?.value),
+            dob: reformatDate(record?.values?.date_of_birth_dd_mmm_yyyy?.value),
+            coverage_start_date: reformatDate(record?.values?.coverage_start_date_dd_mmm_yyyy?.value),
             sum_insured: record?.values?.sum_insured?.value,
             slab_id: record?.values?.slab_id?.value,
             mobile: record?.values?.mobile?.value,
@@ -229,12 +291,25 @@ export default function flatfileEventListener(listener) {
               dataMismatch.push({
                 key,
                 mismatches,
+                genomeRecord
               });
             }
           }
       }
+      console.log('mismatched :', JSON.stringify(dataMismatch[0]))
 
       if(missingAtInsurer?.length) {
+        await api.jobs.create({
+          type: "workbook",
+          operation: "delete-records",
+          trigger: "immediate",
+          source: workbookId,
+          config: {
+            sheet: deleteSheet?.id,
+            filter: "all",
+          },
+        });
+
         await api.records.insert(deleteSheet?.id, missingAtInsurer?.map((item) => ({
           user_id: { value: item?.user_id },
           relationship_to_account_holder: { value: item?.relationship },
@@ -242,6 +317,64 @@ export default function flatfileEventListener(listener) {
           policy_exception: { value: ''},
         })));
       }
+
+      if(missingInGenome?.length) {
+        await api.jobs.create({
+          type: "workbook",
+          operation: "delete-records",
+          trigger: "immediate",
+          source: workbookId,
+          config: {
+            sheet: addSheet?.id,
+            filter: "all",
+          },
+        });
+        
+        await api.records.insert(addSheet?.id, missingInGenome?.map((item) => ({
+          employee_id: { value: item?.employee_id },
+          relationship_to_account_holder: { value: item?.relationship },
+          name: { value: item?.name },
+          coverage_start_date_dd_mmm_yyyy: { value: item?.coverage_start_date },
+          enrolment_due_date_dd_mmm_yyyy: { value: item?.enrolment_due_date },
+          slab_id: { value: item?.slab_id },
+          mobile: { value: item?.mobile },
+          email_address: { value: item?.email },
+          date_of_leaving_dd_mmm_yyyy: { value: null},
+          gender: { value: item?.gender },
+          ctc: { value: item?.ctc },
+          date_of_birth_dd_mmm_yyyy: { value: item?.dob },
+        })));
+      }
+
+      if(dataMismatch?.length) {
+        await api.jobs.create({
+          type: "workbook",
+          operation: "delete-records",
+          trigger: "immediate",
+          source: workbookId,
+          config: {
+            sheet: editSheet?.id,
+            filter: "all",
+          },
+        });
+        
+        await api.records.insert(editSheet?.id, dataMismatch?.map((item) => ({
+          user_id: { value: item?.genomeRecord?.user_id },
+          name: { value: item?.genomeRecord?.name },
+          relationship_to_account_holder: { value: item?.genomeRecord?.relationship },
+          coverage_start_date_dd_mmm_yyyy: { value: item?.genomeRecord?.coverage_start_date },
+          enrolment_due_date_dd_mmm_yyyy: { value: item?.genomeRecord?.enrolment_due_date },
+          slab_id: { value: item?.genomeRecord?.slab_id },
+          mobile: { value: item?.genomeRecord?.mobile },
+          email_address: { value: item?.genomeRecord?.email },
+          date_of_leaving_dd_mmm_yyyy: { value: null},
+          gender: { value: item?.genomeRecord?.gender },
+          ctc: { value: item?.genomeRecord?.ctc },
+          date_of_birth_dd_mmm_yyyy: { value: item?.genomeRecord?.dob },
+          mismatch: { value: formatMismatches(item?.mismatches) }
+        })));
+      }
+
       // Log results
       console.log("Missing at Insurer:", missingAtInsurer?.length, JSON.stringify(missingAtInsurer[0]));
       console.log("Missing in Genome:", missingInGenome?.length,JSON.stringify(missingInGenome[0]));
