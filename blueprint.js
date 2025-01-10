@@ -42,11 +42,6 @@ export const blueprint = (sumInsuredList) => ({
           "type": "string",
         },
         {
-          "key": "slab_id",
-          "label": "Slab ID",
-          "type": "string"
-        },
-        {
           "key": "mobile",
           "label": "Mobile",
           "type": "string"
@@ -68,6 +63,23 @@ export const blueprint = (sumInsuredList) => ({
       "slug": "genome_active_roster",
       "allowAdditionalFields": false,
       "fields": [
+        {
+          "key": "is_active",
+          "label": "Active",
+          "type": "enum",
+          "config": {
+            "options": [
+              {
+                "value": "Yes",
+                "label": "Nes"
+              },
+              {
+                "value": "No",
+                "label": "No",
+              }
+            ]
+          }
+        },
         {
           "key": "user_id",
           "label": "User ID",
