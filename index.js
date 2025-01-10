@@ -316,7 +316,7 @@ export default function flatfileEventListener(listener) {
               mismatches.push({ field: "Sum Insured", hr: hrRecord.sum_insured, ic: icRecord.sum_insured });
 
             if (mismatches.length > 0) {
-              dataMismatch.push({ key, mismatches, genomeRecord });
+              dataMismatch.push({ key, mismatches, ...hrRecord });
             }
           }
         }
@@ -355,129 +355,11 @@ export default function flatfileEventListener(listener) {
               mismatches.push({ field: "Sum Insured", genome: genomeRecord.sum_insured, ic: icRecord.sum_insured });
 
             if (mismatches.length > 0) {
-              dataMismatch.push({ key, mismatches, genomeRecord });
+              dataMismatch.push({ key, mismatches, ...genomeRecord });
             }
           }
         }
       }
-
-      await api.jobs.create({
-        type: "workbook",
-        operation: "delete-records",
-        trigger: "immediate",
-        source: workbookId,
-        config: {
-          sheet: deleteSheet?.id,
-          filter: "all",
-        },
-      });
-      await api.jobs.create({
-        type: "workbook",
-        operation: "delete-records",
-        trigger: "immediate",
-        source: workbookId,
-        config: {
-          sheet: addSheet?.id,
-          filter: "all",
-        },
-      });
-      await api.jobs.create({
-        type: "workbook",
-        operation: "delete-records",
-        trigger: "immediate",
-        source: workbookId,
-        config: {
-          sheet: editSheet?.id,
-          filter: "all",
-        },
-      });
-      
-      if(offboardSheet?.length || offboardSheet2?.length) {
-        if(offboardSheet?.length) {
-          await api.records.insert(deleteSheet?.id, offboardSheet?.map((item) => ({
-            user_id: { value: item?.user_id },
-            employee_id: { value: item?.employee_id },
-            name: { value: item?.name },
-            relationship_to_account_holder: { value: item?.relationship },
-            date_of_leaving_dd_mmm_yyyy: { value: null},
-            policy_exception: { value: ''},
-            required_confirmation: { value: true },
-          })));
-        }
-        if(offboardSheet2?.length) {
-          await api.records.insert(deleteSheet?.id, offboardSheet2?.map((item) => ({
-            user_id: { value: item?.user_id },
-            employee_id: { value: item?.employee_id },
-            name: { value: item?.name },
-            relationship_to_account_holder: { value: item?.relationship },
-            date_of_leaving_dd_mmm_yyyy: { value: null},
-            policy_exception: { value: ''},
-            required_confirmation: { value: false }
-          })));
-        }
-      }
-
-      if(addData?.length) {        
-        await api.records.insert(addSheet?.id, addData?.map((item) => ({
-          employee_id: { value: item?.employee_id },
-          relationship_to_account_holder: { value: item?.relationship },
-          name: { value: item?.name },
-          coverage_start_date_dd_mmm_yyyy: { value: item?.coverage_start_date },
-          enrolment_due_date_dd_mmm_yyyy: { value: item?.enrolment_due_date },
-          slab_id: { value: item?.slab_id },
-          mobile: { value: item?.mobile },
-          email_address: { value: item?.email },
-          date_of_leaving_dd_mmm_yyyy: { value: null},
-          gender: { value: item?.gender },
-          ctc: { value: item?.ctc },
-          date_of_birth_dd_mmm_yyyy: { value: item?.dob },
-        })));
-      }
-
-      if(editData?.length || dataMismatch?.length) {
-        if(editData?.length) {
-          await api.records.insert(editSheet?.id, editData?.map((item) => ({
-            user_id: { value: item?.genomeRecord?.user_id },
-            name: { value: item?.genomeRecord?.name },
-            relationship_to_account_holder: { value: item?.genomeRecord?.relationship },
-            coverage_start_date_dd_mmm_yyyy: { value: item?.genomeRecord?.coverage_start_date },
-            enrolment_due_date_dd_mmm_yyyy: { value: item?.genomeRecord?.enrolment_due_date },
-            slab_id: { value: item?.genomeRecord?.slab_id },
-            mobile: { value: item?.genomeRecord?.mobile },
-            email_address: { value: item?.genomeRecord?.email },
-            date_of_leaving_dd_mmm_yyyy: { value: null},
-            gender: { value: item?.genomeRecord?.gender },
-            ctc: { value: item?.genomeRecord?.ctc },
-            date_of_birth_dd_mmm_yyyy: { value: item?.genomeRecord?.dob },
-            mismatch: { value: item?.mismatches ? formatMismatches(item?.mismatches) : '' }
-          })));
-        }
-        console.log('dataMismatch', JSON.stringify(dataMismatch))
-        if(dataMismatch?.length) {
-          console.log('dataMismatch', JSON.stringify(dataMismatch[0]))
-          await api.records.insert(editSheet?.id, dataMismatch?.map((item) => ({
-            user_id: { value: item?.genomeRecord?.user_id },
-            name: { value: item?.genomeRecord?.name },
-            relationship_to_account_holder: { value: item?.genomeRecord?.relationship },
-            coverage_start_date_dd_mmm_yyyy: { value: item?.genomeRecord?.coverage_start_date },
-            enrolment_due_date_dd_mmm_yyyy: { value: item?.genomeRecord?.enrolment_due_date },
-            slab_id: { value: item?.genomeRecord?.slab_id },
-            mobile: { value: item?.genomeRecord?.mobile },
-            email_address: { value: item?.genomeRecord?.email },
-            date_of_leaving_dd_mmm_yyyy: { value: null},
-            gender: { value: item?.genomeRecord?.gender },
-            ctc: { value: item?.genomeRecord?.ctc },
-            date_of_birth_dd_mmm_yyyy: { value: item?.genomeRecord?.dob },
-            mismatch: { value: item?.mismatches ? formatMismatches(item?.mismatches) : '' }
-          })));
-        }
-
-      }
-
-      // Log results
-      console.log("Add Records:", addData?.length, JSON.stringify(addData[0]));
-      console.log("Edit Genome:", editData?.length,JSON.stringify(editData[0]));
-      console.log("Offboard Data:", (offboardSheet?.length + offboardSheet2?.length), JSON.stringify([...offboardSheet2, ...offboardSheet][0]));
   
       try {
         await api.jobs.ack(jobId, {
@@ -485,6 +367,161 @@ export default function flatfileEventListener(listener) {
           progress: 10,
         });
   
+
+        await api.jobs.create({
+          type: "workbook",
+          operation: "delete-records",
+          trigger: "immediate",
+          source: workbookId,
+          config: {
+            sheet: deleteSheet?.id,
+            filter: "all",
+          },
+        });
+
+        await api.jobs.ack(jobId, {
+          info: "Data recon has started",
+          progress: 20,
+        });
+        await api.jobs.create({
+          type: "workbook",
+          operation: "delete-records",
+          trigger: "immediate",
+          source: workbookId,
+          config: {
+            sheet: addSheet?.id,
+            filter: "all",
+          },
+        });
+
+        await api.jobs.ack(jobId, {
+          info: "Data recon has started",
+          progress: 30,
+        });
+
+        await api.jobs.create({
+          type: "workbook",
+          operation: "delete-records",
+          trigger: "immediate",
+          source: workbookId,
+          config: {
+            sheet: editSheet?.id,
+            filter: "all",
+          },
+        });
+        
+        await api.jobs.ack(jobId, {
+          info: "Data recon has started",
+          progress: 40,
+        });
+
+        if(offboardSheet?.length || offboardSheet2?.length) {
+          if(offboardSheet?.length) {
+            await api.records.insert(deleteSheet?.id, offboardSheet?.map((item) => ({
+              user_id: { value: item?.user_id },
+              employee_id: { value: item?.employee_id },
+              name: { value: item?.name },
+              relationship_to_account_holder: { value: item?.relationship },
+              date_of_leaving_dd_mmm_yyyy: { value: null},
+              policy_exception: { value: ''},
+              required_confirmation: { value: true },
+            })));
+          }
+          if(offboardSheet2?.length) {
+            await api.records.insert(deleteSheet?.id, offboardSheet2?.map((item) => ({
+              user_id: { value: item?.user_id },
+              employee_id: { value: item?.employee_id },
+              name: { value: item?.name },
+              relationship_to_account_holder: { value: item?.relationship },
+              date_of_leaving_dd_mmm_yyyy: { value: null},
+              policy_exception: { value: ''},
+              required_confirmation: { value: false }
+            })));
+          }
+        }
+
+        await api.jobs.ack(jobId, {
+          info: "Data recon has started",
+          progress: 60,
+        });
+
+        if(addData?.length) {        
+          await api.records.insert(addSheet?.id, addData?.map((item) => ({
+            employee_id: { value: item?.employee_id },
+            relationship_to_account_holder: { value: item?.relationship },
+            name: { value: item?.name },
+            coverage_start_date_dd_mmm_yyyy: { value: item?.coverage_start_date },
+            enrolment_due_date_dd_mmm_yyyy: { value: item?.enrolment_due_date },
+            slab_id: { value: item?.slab_id },
+            mobile: { value: item?.mobile },
+            email_address: { value: item?.email },
+            date_of_leaving_dd_mmm_yyyy: { value: null},
+            gender: { value: item?.gender },
+            ctc: { value: item?.ctc },
+            date_of_birth_dd_mmm_yyyy: { value: item?.dob },
+          })));
+        }
+
+        await api.jobs.ack(jobId, {
+          info: "Data recon has started",
+          progress: 80,
+        });
+
+        if(editData?.length || dataMismatch?.length) {
+          if(editData?.length) {
+            await api.records.insert(editSheet?.id, editData?.map((item) => ({
+              employee_id: { value: item?.employee_id },
+              name: { value: item?.name },
+              relationship_to_account_holder: { value: item?.relationship },
+              coverage_start_date_dd_mmm_yyyy: { value: item?.coverage_start_date },
+              enrolment_due_date_dd_mmm_yyyy: { value: item?.enrolment_due_date },
+              slab_id: { value: item?.slab_id },
+              mobile: { value: item?.mobile },
+              email_address: { value: item?.email },
+              date_of_leaving_dd_mmm_yyyy: { value: null},
+              gender: { value: item?.gender },
+              ctc: { value: item?.ctc },
+              date_of_birth_dd_mmm_yyyy: { value: item?.dob },
+              mismatch: { value: item?.mismatches ? formatMismatches(item?.mismatches) : '' }
+            })));
+          }
+
+          await api.jobs.ack(jobId, {
+            info: "Data recon has started",
+            progress: 90,
+          });
+
+          console.log('dataMismatch', JSON.stringify(dataMismatch))
+          if(dataMismatch?.length) {
+            console.log('dataMismatch', JSON.stringify(dataMismatch[0]))
+              await api.records.insert(editSheet?.id, dataMismatch?.map((item) => ({
+              employee_id: { value: item?.employee_id },
+              name: { value: item?.name },
+              relationship_to_account_holder: { value: item?.relationship },
+              coverage_start_date_dd_mmm_yyyy: { value: item?.coverage_start_date },
+              enrolment_due_date_dd_mmm_yyyy: { value: item?.enrolment_due_date },
+              slab_id: { value: item?.slab_id },
+              mobile: { value: item?.mobile },
+              email_address: { value: item?.email },
+              date_of_leaving_dd_mmm_yyyy: { value: null},
+              gender: { value: item?.gender },
+              ctc: { value: item?.ctc },
+              date_of_birth_dd_mmm_yyyy: { value: item?.dob },
+              mismatch: { value: item?.mismatches ? formatMismatches(item?.mismatches) : '' }
+              })));
+          }
+
+          await api.jobs.ack(jobId, {
+            info: "Data recon has started",
+            progress: 100,
+          });
+        }
+
+
+        // Log results
+        console.log("Add Records:", addData?.length, JSON.stringify(addData[0]));
+        console.log("Edit Genome:", editData?.length,JSON.stringify(editData[0]));
+        console.log("Offboard Data:", (offboardSheet?.length + offboardSheet2?.length), JSON.stringify([...offboardSheet2, ...offboardSheet][0]));
         await api.jobs.complete(jobId, {
           outcome: {
             message: `Data recon completed.`,

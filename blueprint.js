@@ -259,8 +259,8 @@ export const blueprint = (sumInsuredList) => ({
       "slug": "edit_data",
       "fields": [
         {
-          "key": "user_id",
-          "label": "User ID",
+          "key": "employee_id",
+          "label": "Employee ID",
           "type": "string"
         },
         {
