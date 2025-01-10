@@ -17,20 +17,146 @@ const sumInsuredMapping = {
   "600000": 5,
 }
 
-function convertUTCtoIST(utcDate) {
-  if (!utcDate) return null; // Handle missing dates
-  try {
-    const date = new Date(utcDate);
-    return reformatDate(date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }));
-  } catch (error) {
-    console.error("Error converting date:", utcDate, error);
-    return utcDate; // Return as-is if conversion fails
+const validateEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return email ? emailRegex.test(email) : false;
+};
+
+const validateMobile = (mobile) => {
+  const mobileRegex = /^[6-9]\d{9}$/;  // Indian mobile number format
+  return mobile ? mobileRegex.test(mobile.toString()) : false;
+};
+
+const validateDate = (date) => {
+  if (!date) return false;
+  const [day, month, year] = date.split('/');
+  const parsedDate = new Date(year, month - 1, day);
+  return parsedDate instanceof Date && !isNaN(parsedDate) &&
+         parseInt(year) >= 1900 && parseInt(year) <= new Date().getFullYear();
+};
+
+const validateGender = (gender) => {
+  const validGenders = ['M', 'F', 'MALE', 'FEMALE', 'OTHER'];
+  return gender ? validGenders.includes(gender.toUpperCase()) : false;
+};
+
+const validateRelationship = (relationship) => {
+  const validRelationships = [
+    'SELF', 'SPOUSE', 'CHILD', 'PARENT', 'MOTHER', 'FATHER',
+    'SON', 'DAUGHTER', 'HUSBAND', 'WIFE'
+  ];
+  return relationship ? validRelationships.includes(relationship.toUpperCase()) : false;
+};
+
+const validateSumInsured = (sumInsured) => {
+  const validSumInsured = ['200000', '250000', '300000', '500000', '600000'];
+  return sumInsured ? validSumInsured.includes(sumInsured.toString()) : false;
+};
+
+const validateEmployeeId = (employeeId) => {
+  return employeeId && employeeId.toString().length > 0;
+};
+
+const validateName = (name) => {
+  return name && name.length >= 2 && /^[a-zA-Z\s.]+$/.test(name);
+};
+
+const validateCTC = (ctc) => {
+  return ctc ? !isNaN(ctc) && parseFloat(ctc) > 0 : false;
+};
+
+const validateRecord = (record, isGenomeData = false) => {
+  const errors = [];
+  
+  // Required for both genome and IC data
+  if (!validateEmployeeId(record.employee_id)) {
+    errors.push('Invalid or missing Employee ID');
   }
-}
+  
+  if (!validateName(record.name)) {
+    errors.push('Invalid or missing Name');
+  }
+  
+  if (!validateRelationship(record.relationship)) {
+    errors.push('Invalid Relationship');
+  }
+  
+  if (!validateGender(record.gender)) {
+    errors.push('Invalid Gender');
+  }
+  
+  if (!validateDate(record.dob)) {
+    errors.push('Invalid Date of Birth');
+  }
+  
+  if (!validateDate(record.coverage_start_date)) {
+    errors.push('Invalid Coverage Start Date');
+  }
+  
+  if (!validateSumInsured(record.sum_insured)) {
+    errors.push('Invalid Sum Insured');
+  }
+  
+  if (record.mobile && !validateMobile(record.mobile)) {
+    errors.push('Invalid Mobile Number');
+  }
+  
+  if (record.email && !validateEmail(record.email)) {
+    errors.push('Invalid Email');
+  }
+  
+  // Additional validations for genome data
+  if (isGenomeData) {
+    if (!validateDate(record.enrolment_due_date)) {
+      errors.push('Invalid Enrolment Due Date');
+    }
+    
+    if (!record.user_id) {
+      errors.push('Missing User ID');
+    }
+    
+    if (record.ctc && !validateCTC(record.ctc)) {
+      errors.push('Invalid CTC');
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors,
+    record
+  };
+};
+
+const validateDataSets = (genomeData, icData) => {
+  const validationResults = {
+    genomeValidations: [],
+    icValidations: [],
+    summary: {
+      totalGenomeRecords: genomeData.length,
+      totalICRecords: icData.length,
+      invalidGenomeRecords: 0,
+      invalidICRecords: 0
+    }
+  };
+
+  // Validate Genome Data
+  validationResults.genomeValidations = genomeData.map(record => 
+    validateRecord(record, true)
+  );
+  
+  // Validate IC Data
+  validationResults.icValidations = icData.map(record => 
+    validateRecord(record, false)
+  );
+  
+  // Update summary
+  validationResults.summary.invalidGenomeRecords = validationResults.genomeValidations
+    .filter(result => !result.isValid).length;
+  validationResults.summary.invalidICRecords = validationResults.icValidations
+    .filter(result => !result.isValid).length;
+  
+  return validationResults;
+};
 
 function reformatDate(dateInput) {
   if (!dateInput) return null;
@@ -149,6 +275,7 @@ export default function flatfileEventListener(listener) {
         if (typeof value === 'string') {
           record.set('slab_id', sumInsuredMapping[value])
         }
+        //TODO: add validation here
         return record
       })
     )
@@ -158,6 +285,8 @@ export default function flatfileEventListener(listener) {
         if (typeof value === 'string') {
           record.set('slab_id', sumInsuredMapping[value])
         }
+        //TODO: add validation here
+        record.addError('sum_insured', 'Invalid sum insured');
         return record
       })
     )
@@ -167,6 +296,7 @@ export default function flatfileEventListener(listener) {
         if (typeof value === 'string') {
           record.set('slab_id', sumInsuredMapping[value])
         }
+        //TODO: add validation here
         return record
       })
     )
@@ -233,6 +363,11 @@ export default function flatfileEventListener(listener) {
           editSheet = element;
         }
       }
+
+        // Validate data
+        const validationResults = validateDataSets(genomeData, icData);
+        // console.log('validationResults', JSON.stringify(validationResults));
+
         const createKey = (record) => `${record.employee_id}_${record.name}`;
 
         // Maps for faster lookup
@@ -275,7 +410,10 @@ export default function flatfileEventListener(listener) {
               mismatches.push({ field: "Joining Date", genome: genomeRecord.coverage_start_date, ic: icRecord.coverage_start_date });
             if (genomeRecord.sum_insured !== icRecord.sum_insured)
               mismatches.push({ field: "Sum Insured", genome: genomeRecord.sum_insured, ic: icRecord.sum_insured });
-
+            // if (genomeRecord.mobile !== icRecord.mobile)
+            //   mismatches.push({ field: "Mobile", genome: genomeRecord.mobile, ic: icRecord.mobile });
+            // if (genomeRecord.email !== icRecord.email)
+            //   mismatches.push({ field: "email", genome: genomeRecord.email, ic: icRecord.email });
             if (mismatches.length > 0) {
               dataMismatch.push({
                 key,
@@ -286,6 +424,13 @@ export default function flatfileEventListener(listener) {
           }
       }
       console.log('mismatched :', JSON.stringify(dataMismatch[0]))
+  
+      try {
+        await api.jobs.ack(jobId, {
+          info: "Data recon has started",
+          progress: 10,
+        });
+  
 
       if(missingAtInsurer?.length) {
         await api.jobs.create({
@@ -368,13 +513,7 @@ export default function flatfileEventListener(listener) {
       console.log("Missing at Insurer:", missingAtInsurer?.length, JSON.stringify(missingAtInsurer[0]));
       console.log("Missing in Genome:", missingInGenome?.length,JSON.stringify(missingInGenome[0]));
       console.log("Data Mismatches:", dataMismatch?.length, JSON.stringify(dataMismatch[0]));
-  
-      try {
-        await api.jobs.ack(jobId, {
-          info: "Data recon has started",
-          progress: 10,
-        });
-  
+
         await api.jobs.complete(jobId, {
           outcome: {
             message: `Data recon completed.`,
