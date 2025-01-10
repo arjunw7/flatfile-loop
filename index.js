@@ -140,15 +140,20 @@ export default function flatfileEventListener(listener) {
       recordHook('hr_data', (record) => {
         const value = record.get('sum_insured')
         if (typeof value === 'string') {
-          record.set('slab_id', sumInsuredMapping[value])
+          if(sumInsuredMapping[value]) {
+            record.set('slab_id', sumInsuredMapping[value])
+          } else {
+            record.addError('sum_insured', 'Invalid sum insured value')
+            record.addError('slab_id', 'slab ID is mandatory')
+          }
         }
     
         // Add email validation
-        const email = record.get('email')
+        const email = record.get('email_address')
         if (email) {
           const isValidEmail = validateEmail(email)
           if (!isValidEmail) {
-            record.addError('email', 'Invalid email address')
+            record.addError('email_address', 'Invalid email address')
           }
         }
     
@@ -168,15 +173,20 @@ export default function flatfileEventListener(listener) {
       recordHook('genome_active_roster', (record) => {
         const value = record.get('sum_insured')
         if (typeof value === 'string') {
-          record.set('slab_id', sumInsuredMapping[value])
+          if(sumInsuredMapping[value]) {
+            record.set('slab_id', sumInsuredMapping[value])
+          } else {
+            record.addError('sum_insured', 'Invalid sum insured value')
+            record.addError('slab_id', 'slab ID is mandatory')
+          }
         }
     
         // Add email validation
-        const email = record.get('email')
+        const email = record.get('email_address')
         if (email) {
           const isValidEmail = validateEmail(email)
           if (!isValidEmail) {
-            record.addError('email', 'Invalid email address')
+            record.addError('email_address', 'Invalid email address')
           }
         }
     
@@ -244,6 +254,7 @@ export default function flatfileEventListener(listener) {
             dob: reformatDate(record?.values?.date_of_birth_dd_mmm_yyyy?.value),
             coverage_start_date: reformatDate(record?.values?.coverage_start_date_dd_mmm_yyyy?.value),
             sum_insured: record?.values?.sum_insured?.value,
+            slab_id: record?.values?.slab_id?.value,
             mobile: record?.values?.mobile?.value,
             email: record?.values.email_address?.value,
             ctc: record?.values.ctc?.value,

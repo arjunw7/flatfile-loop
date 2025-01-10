@@ -368,7 +368,8 @@ export const blueprint = (sumInsuredList) => ({
       "mode": "foreground",
       "label": "Download Validator Data",
       "description": "Downloads Excel Workbook of Data",
-      "primary": true
+      "primary": true,
+      constraints: [{ type: 'hasAllValid' }]
     },
     {
       operation: 'submitActionFg',
@@ -377,6 +378,7 @@ export const blueprint = (sumInsuredList) => ({
       type: 'string',
       description: 'Submit this data to a webhook.',
       primary: true,
+      constraints: [{ type: 'hasAllValid' }]
     },
   ]
 })
