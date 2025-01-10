@@ -71,7 +71,7 @@ export const blueprint = (sumInsuredList) => ({
             "options": [
               {
                 "value": "Yes",
-                "label": "Nes"
+                "label": "Yes"
               },
               {
                 "value": "No",
@@ -189,16 +189,6 @@ export const blueprint = (sumInsuredList) => ({
         {
           "key": "slab_id",
           "label": "Slab ID",
-          "type": "string"
-        },
-        {
-          "key": "mobile",
-          "label": "Mobile",
-          "type": "string"
-        },
-        {
-          "key": "email_address",
-          "label": "Email Address",
           "type": "string"
         },
       ]
