@@ -38,17 +38,13 @@ function reformatDate(dateInput) {
   try {
     let parsedDate;
 
-    // Handle Unix timestamp
     if (!isNaN(dateInput) && (typeof dateInput === 'number' || !isNaN(Number(dateInput)))) {
       parsedDate = new Date(parseInt(dateInput));
     }
-    // Handle ISO format directly
     else if (dateInput.includes('T')) {
       parsedDate = new Date(dateInput);
     }
-    // Handle dates with month names (e.g., "25-Aug-74" or "16 Sep 2024")
     else if (/[a-zA-Z]/.test(dateInput)) {
-      // Convert two-digit year to four digits
       const parts = dateInput.replace(/[-\s]/g, ' ').split(' ');
       if (parts[2] && parts[2].length === 2) {
         const year = parseInt(parts[2]);
@@ -56,20 +52,16 @@ function reformatDate(dateInput) {
       }
       parsedDate = new Date(parts.join(' '));
     }
-    // Handle numeric dates (e.g., "01/02/23" or "2023/12/31")
     else {
       const parts = dateInput.split(/[-/]/);
       
-      // Check if year is in first position (YYYY-MM-DD)
       if (parts[0].length === 4) {
         parsedDate = new Date(dateInput);
       } else {
-        // Handle DD/MM/YY or DD/MM/YYYY
         if (parts[2].length === 2) {
           const year = parseInt(parts[2]);
           parts[2] = (year < 50 ? '20' : '19') + parts[2].padStart(2, '0');
         }
-        // Rearrange to MM/DD/YYYY for Date constructor
         const month = parts[1];
         parts[1] = parts[0];
         parts[0] = month;
@@ -77,7 +69,6 @@ function reformatDate(dateInput) {
       }
     }
 
-    // Verify we have a valid date
     if (isNaN(parsedDate.getTime())) {
       throw new Error('Invalid date');
     }
@@ -102,10 +93,8 @@ const formatMismatches = (mismatches) => {
   if (!mismatches || mismatches.length === 0) return '';
 
   return mismatches.map(mismatch => {
-    // Create consistent spacing for alignment
-    const field = mismatch.field.padEnd(15, ' ');  // Adjust padding as needed
-    return `${field} -> Genome: ${mismatch.genome.padEnd(10)} <> IC: ${mismatch.ic}`;
-  }).join(' & ');
+    return `${mismatch.field}: [Genome: "${mismatch.genome}", IC: "${mismatch.ic}"] `;
+  }).join(', ');
 };
 
 
