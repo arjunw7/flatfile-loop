@@ -17,20 +17,10 @@ const sumInsuredMapping = {
   "600000": 5,
 }
 
-function convertUTCtoIST(utcDate) {
-  if (!utcDate) return null; // Handle missing dates
-  try {
-    const date = new Date(utcDate);
-    return reformatDate(date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }));
-  } catch (error) {
-    console.error("Error converting date:", utcDate, error);
-    return utcDate; // Return as-is if conversion fails
-  }
-}
+const validateEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return email ? emailRegex.test(email) : false;
+};
 
 function reformatDate(dateInput) {
   if (!dateInput) return null;
@@ -152,6 +142,16 @@ export default function flatfileEventListener(listener) {
         if (typeof value === 'string') {
           record.set('slab_id', sumInsuredMapping[value])
         }
+    
+        // Add email validation
+        const email = record.get('email')
+        if (email) {
+          const isValidEmail = validateEmail(email)
+          if (!isValidEmail) {
+            record.addError('email', 'Invalid email address')
+          }
+        }
+    
         return record
       })
     )
@@ -170,10 +170,19 @@ export default function flatfileEventListener(listener) {
         if (typeof value === 'string') {
           record.set('slab_id', sumInsuredMapping[value])
         }
+    
+        // Add email validation
+        const email = record.get('email')
+        if (email) {
+          const isValidEmail = validateEmail(email)
+          if (!isValidEmail) {
+            record.addError('email', 'Invalid email address')
+          }
+        }
+    
         return record
       })
     )
-
     namespacedEvents.use(exportWorkbookPlugin())
   })
 
