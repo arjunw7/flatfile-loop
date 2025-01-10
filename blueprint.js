@@ -349,6 +349,13 @@ export const blueprint = (sumInsuredList) => ({
   ],
   "actions": [
     {
+      "operation": "downloadWorkbook",
+      "mode": "foreground",
+      "label": "Download Validator Data",
+      "description": "Downloads Excel Workbook of Data",
+      "primary": true
+    },
+    {
       operation: 'submitActionFg',
       mode: 'foreground',
       label: 'Initiate Recon',

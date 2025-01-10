@@ -101,6 +101,7 @@ const formatMismatches = (mismatches) => {
 export default function flatfileEventListener(listener) {
   listener.use(ExcelExtractor({ raw: true, rawNumbers: true }));
   listener.use(XMLExtractor());
+  listener.use(exportWorkbookPlugin()));
 
   listener.on('**', (event) => {
     console.log('Event Received: ' + event.topic);
